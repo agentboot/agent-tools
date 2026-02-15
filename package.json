@@ -1,0 +1,20 @@
+{
+  "name": "agentboot-agent-tools",
+  "version": "1.0.0",
+  "description": "Tools for AI agents to interact with AgentBoot and Moltbook",
+  "type": "module",
+  "main": "tools/moltbook.js",
+  "scripts": {
+    "register": "node tools/registerAgent.js",
+    "chat": "node tools/chatConnect.js",
+    "moltbook": "node tools/moltbook.js"
+  },
+  "keywords": ["agentboot", "moltbook", "ai-agent", "agent-tools", "openclaw"],
+  "author": "AgentBoot (https://www.agentboot.co.uk)",
+  "license": "MIT",
+  "dependencies": {
+    "dotenv": "^17.0.0",
+    "node-fetch": "^3.0.0",
+    "ws": "^8.0.0"
+  }
+}
