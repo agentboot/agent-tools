@@ -18,7 +18,8 @@ import fetch from 'node-fetch';
 import { config } from 'dotenv';
 config();
 
-const API_KEY = process.env.MOLTBOOK_API_KEY || 'moltbook_sk_rllwrVq7C0s7fP9AytU47D1vp2mvOQ-2';
+const API_KEY = process.env.MOLTBOOK_API_KEY;
+if (!API_KEY) { console.error('❌ MOLTBOOK_API_KEY not set in .env'); process.exit(1); }
 const API_BASE = 'https://www.moltbook.com/api/v1';
 
 const headers = {
@@ -28,35 +29,107 @@ const headers = {
 
 // ─── Math Challenge Solver ────────────────────────────────────────────────────
 function solveLobsterMath(challenge) {
-  const text = challenge.replace(/[^a-zA-Z0-9\s.+\-]/g, ' ');
-  const nums = [...text.matchAll(/\d+(?:\.\d+)?/g)].map(m => parseFloat(m[0]));
+  // Step 1: De-obfuscate — preserve * and x as multiply signals, then remove other non-alpha/digit chars
+  const hasMultiply = /\*|times|multiply|\bx\b/i.test(challenge);
+  const text = challenge.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+
+  // Word-to-number map
+  const wordNums = {
+    zero:0,one:1,two:2,three:3,four:4,five:5,six:6,seven:7,eight:8,nine:9,ten:10,
+    eleven:11,twelve:12,thirteen:13,fourteen:14,fifteen:15,sixteen:16,seventeen:17,
+    eighteen:18,nineteen:19,twenty:20,thirty:30,forty:40,fifty:50,sixty:60,
+    seventy:70,eighty:80,ninety:90,hundred:100,thousand:1000
+  };
+
+  // Extract numeric values — both digit-based and word-based
+  let nums = [];
+
+  // First try digit extraction
+  const digitNums = [...text.matchAll(/\d+(?:\.\d+)?/g)].map(m => parseFloat(m[0]));
+  nums = digitNums;
+
+  // If no digits found, try word numbers
+  if (nums.length === 0) {
+    const words = text.split(/\s+/);
+    let current = 0;
+    let wordNumList = [];
+    let inNum = false;
+    for (const w of words) {
+      if (wordNums[w] !== undefined) {
+        if (wordNums[w] >= 100) {
+          current = (current || 1) * wordNums[w];
+        } else if (wordNums[w] >= 20) {
+          current += wordNums[w];
+        } else {
+          current += wordNums[w];
+        }
+        inNum = true;
+      } else if (inNum) {
+        wordNumList.push(current);
+        current = 0;
+        inNum = false;
+      }
+    }
+    if (inNum) wordNumList.push(current);
+    nums = wordNumList;
+  }
+
+  // If still nothing, try mixed: some digits, some words
+  if (nums.length < 2) {
+    const allNums = [];
+    const words = text.split(/\s+/);
+    let current = 0;
+    let inNum = false;
+    for (const w of words) {
+      const d = parseFloat(w);
+      if (!isNaN(d)) {
+        if (inNum) allNums.push(current);
+        allNums.push(d);
+        current = 0;
+        inNum = false;
+      } else if (wordNums[w] !== undefined) {
+        if (wordNums[w] >= 100) {
+          current = (current || 1) * wordNums[w];
+        } else if (wordNums[w] >= 20) {
+          current += wordNums[w];
+        } else {
+          current += wordNums[w];
+        }
+        inNum = true;
+      } else if (inNum) {
+        allNums.push(current);
+        current = 0;
+        inNum = false;
+      }
+    }
+    if (inNum) allNums.push(current);
+    if (allNums.length >= nums.length) nums = allNums;
+  }
+
+  if (nums.length === 0) return '0.00';
 
   // Work = Force × Distance (Joules)
-  if (/joule|newton.*meter|work/i.test(text) && nums.length >= 2) {
+  if (/joule|work|newton.*meter|meter.*newton/.test(text) && nums.length >= 2) {
     return (nums[0] * nums[1]).toFixed(2);
   }
 
   // Velocity: distance = speed × time
-  if (/swims.*per.*second.*for.*second|how far|distance/i.test(text) && nums.length >= 2) {
+  if (/how far|distance|swims.*second|travels.*second/.test(text) && nums.length >= 2) {
     return (nums[0] * nums[1]).toFixed(2);
   }
 
-  // Force addition (+ / and / total)
-  if (/force|newton|claw|total|combined/i.test(text) && nums.length >= 2) {
-    return nums.reduce((a, b) => a + b, 0).toFixed(2);
+  // "N * M claw force measures" pattern — explicit multiplication
+  if (hasMultiply && /claw|force|measure/.test(text) && nums.length >= 2) {
+    return (nums[0] * nums[1]).toFixed(2);
   }
 
-  // Velocity change / addition
-  if (/velocity|speed|per second|gain|increase/i.test(text) && nums.length >= 2) {
-    return nums.reduce((a, b) => a + b, 0).toFixed(2);
+  // Multiplication signals
+  if ((hasMultiply || /times|multiply|product/.test(text)) && nums.length >= 2) {
+    return (nums[0] * nums[1]).toFixed(2);
   }
 
-  // Simple addition fallback: sum all numbers
-  if (nums.length >= 2) {
-    return nums.reduce((a, b) => a + b, 0).toFixed(2);
-  }
-
-  return '42.00'; // last resort fallback
+  // Addition / total force — default for lobster claw/force/newton/velocity problems
+  return nums.reduce((a, b) => a + b, 0).toFixed(2);
 }
 
 // ─── API Helpers ──────────────────────────────────────────────────────────────

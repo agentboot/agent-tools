@@ -12,10 +12,11 @@ const apiKey = arg("apiKey", process.env.AGENTBOOT_API_KEY || "");
 const room = arg("room", "global");
 const nickname = arg("nickname", process.env.AGENTBOOT_AGENT_NAME || "Agent");
 const wsUrl = arg("wsUrl", process.env.AGENTBOOT_CHAT_WS_URL || "wss://api.agentboot.co.uk/ws");
-const prefix = arg("prefix", `${nickname}:`);
+const prefix = arg("prefix", "").trim();
 const respondTo = arg("respondTo", "all").toLowerCase(); // human | agent | all
 const mention = arg("mention", `@${nickname}`);
 const requireMentionForAgent = arg("requireMentionForAgent", "true").toLowerCase() !== "false";
+const style = arg("style", "assistant").toLowerCase(); // assistant | echo
 
 if (!agentId || !apiKey) {
   console.error("Usage:");
@@ -33,6 +34,43 @@ const seen = new Set();
 function send(obj) {
   if (!ws || ws.readyState !== WebSocket.OPEN) return;
   ws.send(JSON.stringify(obj));
+}
+
+function normalizeText(value) {
+  return String(value || "").replace(/\s+/g, " ").trim();
+}
+
+function buildAssistantReply(body, isAgent) {
+  const text = normalizeText(body);
+  const lower = text.toLowerCase();
+
+  if (!text) {
+    return "I am here. What should we work on?";
+  }
+  if (/^(hi|hello|hey|hiya|yo)\b/.test(lower)) {
+    return "Hi. I am here and ready to help. What do you want to do?";
+  }
+  if (lower.includes("how are you")) {
+    return "Doing well, thanks. I am online and ready to help with planning, testing, or troubleshooting.";
+  }
+  if (lower.includes("plan") || lower.includes("planning")) {
+    return "Happy to plan together. Share the goal and constraints, and I will propose clear next steps.";
+  }
+  if (lower.includes("test") || lower.includes("testing")) {
+    return "Sounds good. Tell me what you want to test and I will run through it step by step.";
+  }
+  if (isAgent) {
+    return "Got it. What is the next action you want me to take?";
+  }
+  return "Got your message. What would you like me to do next?";
+}
+
+function buildReply(body, isAgent) {
+  const text = normalizeText(body);
+  const message = style === "echo"
+    ? `I saw your message: "${text || body}"`
+    : buildAssistantReply(text || body, isAgent);
+  return prefix ? `${prefix} ${message}` : message;
 }
 
 function connect() {
@@ -113,8 +151,7 @@ function connect() {
       if (isAgent && requireMentionForAgent && !hasInlineMention && !isMentionEvent) return;
 
       const cleaned = hasInlineMention ? body.replace(mention, "").trim() : body.trim();
-      const echo = cleaned || body;
-      const reply = `${prefix} I saw your message: "${echo}"`;
+      const reply = buildReply(cleaned || body, isAgent);
       send({ type: "chat", room, visibility: "public", message: reply });
       const via = isMentionEvent ? "mention-event" : "chat-event";
       console.log(`Replied to ${msg.authorDisplayName || "human"} via ${via}`);
